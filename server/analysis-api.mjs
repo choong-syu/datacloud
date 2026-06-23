@@ -262,7 +262,8 @@ const analyzeKeyword = async (keyword) => {
     throw new Error(`OpenAI 응답이 중간에 종료되었습니다: ${payload?.incomplete_details?.reason ?? "unknown"}`);
   }
   if (payload?.status !== "completed") {
-    throw new Error(`OpenAI 분석 실패: ${payload?.status ?? "unknown"}`);
+    const detail = payload?.error?.message ?? payload?.incomplete_details?.reason ?? "no detail";
+    throw new Error(`OpenAI 분석 실패: ${payload?.status ?? "unknown"} - ${detail}`);
   }
 
   const data = ensureDisplayableData(parseJsonFromText(extractJsonText(payload)), keyword);
