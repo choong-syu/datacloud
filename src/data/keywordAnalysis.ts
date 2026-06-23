@@ -12,6 +12,13 @@ const updateStages = (stages: AnalysisStage[], activeId: string, doneIds: string
     status: doneIds.includes(stage.id) ? "done" as const : stage.id === activeId ? "running" as const : "waiting" as const
   }));
 
+const getApiBaseUrl = () => {
+  const configuredApiBaseUrl = (import.meta as any).env?.VITE_ANALYSIS_API_URL;
+  if (configuredApiBaseUrl) return configuredApiBaseUrl;
+
+  return window.location.port === "5173" ? `${window.location.protocol}//${window.location.hostname}:8787` : "";
+};
+
 export const createKeywordAnalysisJob = (keyword: string): KeywordAnalysisJob => ({
   id: `custom:${keyword}:${Date.now()}`,
   keyword,
@@ -23,7 +30,7 @@ export const createKeywordAnalysisJob = (keyword: string): KeywordAnalysisJob =>
 });
 
 const requestKeywordAnalysis = async (keyword: string): Promise<MarketData> => {
-  const apiBaseUrl = (import.meta as any).env?.VITE_ANALYSIS_API_URL ?? `${window.location.protocol}//${window.location.hostname}:8787`;
+  const apiBaseUrl = getApiBaseUrl();
   const response = await fetch(`${apiBaseUrl}/api/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,11 +52,11 @@ export const runKeywordAnalysis = async (keyword: string, onProgress: ProgressCa
   });
 
   const progressSteps = [
-    { id: "prepare", delay: 600, message: "키워드 기반 내부 프롬프트를 구성했습니다." },
+    { id: "prepare", delay: 600, message: "키워드 기반 내부 분석 프롬프트를 구성했습니다." },
     { id: "collect", delay: 1600, message: "GPT가 공개 채용공고와 검색 결과를 조회하고 있습니다." },
     { id: "extract", delay: 5200, message: "조회 결과에서 직무명, 기술스택, 필수/우대 조건을 추출하고 있습니다." },
     { id: "analyze", delay: 9000, message: "직무 관계와 기술 동시 등장 관계를 분석하고 있습니다." },
-    { id: "compose", delay: 13000, message: "서비스에서 사용할 JSON 구조로 정리하고 있습니다." },
+    { id: "compose", delay: 13000, message: "서비스 화면에서 사용할 JSON 구조로 정리하고 있습니다." },
     { id: "compose", delay: 20000, message: "reasoning 모델이 근거와 스키마를 다시 점검하고 있습니다. 조금 더 걸릴 수 있습니다." },
     { id: "compose", delay: 30000, message: "채용공고 근거 URL과 그래프 노드를 최종 검증하고 있습니다." },
     { id: "compose", delay: 45000, message: "분석 결과를 기다리는 중입니다. 기존 CLOUD/DATA 데이터는 계속 확인할 수 있습니다." }

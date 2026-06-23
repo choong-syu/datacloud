@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # Ubuntu VM startup script for datacloud.
-# 1. Set OPENAI_API_KEY below or inject it as a VM metadata/environment secret.
-# 2. Open inbound TCP ports 5173 and 8787 in the cloud firewall/security group.
+# Open only inbound TCP 80 (web) and 22 (SSH) in the cloud firewall/security group.
+# Nginx serves the built frontend and proxies /api to the internal API on 127.0.0.1:8787.
 
 REPO_URL="https://github.com/choong-syu/datacloud.git"
 APP_DIR="/opt/datacloud"
@@ -19,7 +19,7 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl git
+apt-get install -y ca-certificates curl git nginx
 
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -56,6 +56,7 @@ Type=simple
 User=$APP_USER
 WorkingDirectory=$APP_DIR
 Environment=ANALYSIS_API_PORT=8787
+Environment=ANALYSIS_API_HOST=127.0.0.1
 Environment=OPENAI_MODEL=$OPENAI_MODEL
 Environment=OPENAI_REASONING_EFFORT=$OPENAI_REASONING_EFFORT
 Environment=ALLOW_ANY_ORIGIN=true
@@ -67,27 +68,45 @@ RestartSec=5
 WantedBy=multi-user.target
 SERVICE
 
-cat >/etc/systemd/system/datacloud-web.service <<SERVICE
-[Unit]
-Description=Datacloud Vite preview web
-After=network-online.target datacloud-api.service
-Wants=network-online.target
+cat >/etc/nginx/sites-available/datacloud <<NGINX
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
+  server_name _;
 
-[Service]
-Type=simple
-User=$APP_USER
-WorkingDirectory=$APP_DIR
-ExecStart=/usr/bin/npm run preview -- --host 0.0.0.0 --port 5173
-Restart=always
-RestartSec=5
+  root $APP_DIR/dist;
+  index index.html;
 
-[Install]
-WantedBy=multi-user.target
-SERVICE
+  location /api/ {
+    proxy_pass http://127.0.0.1:8787/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Real-IP \$remote_addr;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto \$scheme;
+    proxy_read_timeout 700s;
+    proxy_send_timeout 700s;
+  }
+
+  location / {
+    try_files \$uri \$uri/ /index.html;
+  }
+}
+NGINX
+
+ln -sf /etc/nginx/sites-available/datacloud /etc/nginx/sites-enabled/datacloud
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
 
 systemctl daemon-reload
-systemctl enable --now datacloud-api.service datacloud-web.service
+systemctl disable --now datacloud-web.service 2>/dev/null || true
+systemctl enable --now datacloud-api.service nginx.service
+systemctl reload nginx.service
+
+if command -v ufw >/dev/null 2>&1; then
+  ufw allow 80/tcp || true
+fi
 
 echo "Datacloud started."
-echo "Web: http://<VM_PUBLIC_IP>:5173"
-echo "API: http://<VM_PUBLIC_IP>:8787/api/health"
+echo "Web: http://<VM_PUBLIC_IP>/"
+echo "API: http://<VM_PUBLIC_IP>/api/health"
