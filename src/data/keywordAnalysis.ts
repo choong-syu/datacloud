@@ -36,8 +36,19 @@ const requestKeywordAnalysis = async (keyword: string): Promise<MarketData> => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ keyword })
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload?.error ?? "GPT 분석 API 호출에 실패했습니다.");
+
+  const responseText = await response.text();
+  let payload: { data?: MarketData; error?: string } = {};
+  if (responseText.trim()) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch {
+      throw new Error(`API가 JSON이 아닌 응답을 반환했습니다. status=${response.status}`);
+    }
+  }
+
+  if (!response.ok) throw new Error(payload?.error ?? `GPT 분석 API 호출에 실패했습니다. status=${response.status}`);
+  if (!payload.data) throw new Error("GPT 분석 API 응답에 data가 없습니다.");
   return normalizeData(payload.data);
 };
 

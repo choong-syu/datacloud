@@ -51,6 +51,45 @@ const getApiKey = async () => {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const readJsonResponse = async (response, label) => {
+  const text = await response.text();
+  if (!text.trim()) {
+    const requestId = response.headers.get("x-request-id") ?? response.headers.get("openai-request-id") ?? "unknown";
+    throw new Error(`${label} returned an empty body. status=${response.status}, request_id=${requestId}`);
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    const preview = text.slice(0, 300).replace(/\s+/g, " ");
+    throw new Error(`${label} returned invalid JSON. status=${response.status}, body=${preview}`);
+  }
+};
+
+const fetchOpenAiJson = async (url, options, label, maxAttempts = 4) => {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(url, options);
+      const payload = await readJsonResponse(response, label);
+      return { response, payload };
+    } catch (error) {
+      lastError = error;
+      if (attempt === maxAttempts) break;
+      console.warn(JSON.stringify({
+        label,
+        attempt,
+        retrying: true,
+        error: error instanceof Error ? error.message : String(error)
+      }));
+      await wait(1200 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const extractJsonText = (output) => {
   if (typeof output?.output_text === "string") return output.output_text;
   const chunks = [];
@@ -176,7 +215,7 @@ const analyzeKeyword = async (keyword) => {
   const apiKey = await getApiKey();
   console.log(JSON.stringify({ receivedKeyword: keyword, codepoints: Array.from(keyword).map((char) => char.codePointAt(0)?.toString(16)) }));
 
-  const createResponse = await fetch("https://api.openai.com/v1/responses", {
+  const { response: createResponse, payload: createPayload } = await fetchOpenAiJson("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
@@ -191,9 +230,9 @@ const analyzeKeyword = async (keyword) => {
       max_output_tokens: 30000,
       background: true
     })
-  });
+  }, "OpenAI response creation");
 
-  let payload = await createResponse.json();
+  let payload = createPayload;
   if (!createResponse.ok) {
     throw new Error(payload?.error?.message ?? `OpenAI API error: ${createResponse.status}`);
   }
@@ -210,10 +249,10 @@ const analyzeKeyword = async (keyword) => {
     }
     console.log(JSON.stringify({ keyword, responseId, status: payload.status }));
     await wait(5000);
-    const pollResponse = await fetch(`https://api.openai.com/v1/responses/${responseId}`, {
+    const { response: pollResponse, payload: pollPayload } = await fetchOpenAiJson(`https://api.openai.com/v1/responses/${responseId}`, {
       headers: { "Authorization": `Bearer ${apiKey}` }
-    });
-    payload = await pollResponse.json();
+    }, "OpenAI response polling");
+    payload = pollPayload;
     if (!pollResponse.ok) {
       throw new Error(payload?.error?.message ?? `OpenAI polling error: ${pollResponse.status}`);
     }
