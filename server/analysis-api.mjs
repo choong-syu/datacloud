@@ -286,13 +286,17 @@ const server = createServer(async (request, response) => {
   }
 
   if (request.url === "/api/debug-keyword" && request.method === "POST") {
-    const body = JSON.parse(await readBody(request));
-    const keyword = String(body.keyword ?? "").trim();
-    sendJson(request, response, 200, {
-      keyword,
-      codepoints: Array.from(keyword).map((char) => char.codePointAt(0)?.toString(16)),
-      promptIncludesKeyword: buildPrompt(keyword).includes(keyword)
-    });
+    try {
+      const body = JSON.parse(await readBody(request));
+      const keyword = String(body.keyword ?? "").trim();
+      sendJson(request, response, 200, {
+        keyword,
+        codepoints: Array.from(keyword).map((char) => char.codePointAt(0)?.toString(16)),
+        promptIncludesKeyword: buildPrompt(keyword).includes(keyword)
+      });
+    } catch {
+      sendJson(request, response, 400, { error: "Invalid JSON request body." });
+    }
     return;
   }
 
