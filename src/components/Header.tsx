@@ -1,4 +1,4 @@
-import { Cloud, Database, Globe2 } from "lucide-react";
+import { Database, Globe2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Summary } from "../types";
 
@@ -7,12 +7,9 @@ export default function Header({ summary, recovered }: { summary: Summary; recov
     <header className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 bg-slate-950/80 px-6 py-4 backdrop-blur">
       <div>
         <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl border border-cyan-300/50 bg-cyan-400/15 text-cyan-200 shadow-glow">
-            <Cloud />
-          </div>
           <div>
-            <h1 className="text-3xl font-black text-white">데이터클라우드공학과</h1>
-            <p className="text-sm font-medium text-cyan-200">채용공고 기반 직무 탐색</p>
+            <h1 className="text-3xl font-black text-white">채용공고 기반 직무 탐색</h1>
+            <p className="text-sm font-medium text-cyan-200">SU-tudy 성과공유회</p>
           </div>
         </div>
       </div>

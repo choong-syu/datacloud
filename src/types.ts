@@ -105,6 +105,27 @@ export interface MarketData {
   recovered?: boolean;
 }
 
+export type AnalysisStageStatus = "waiting" | "running" | "done" | "error";
+
+export interface AnalysisStage {
+  id: string;
+  label: string;
+  description: string;
+  status: AnalysisStageStatus;
+}
+
+export type AnalysisJobStatus = "running" | "completed" | "failed";
+
+export interface KeywordAnalysisJob {
+  id: string;
+  keyword: string;
+  status: AnalysisJobStatus;
+  stages: AnalysisStage[];
+  activeStageId?: string;
+  message?: string;
+  promptPreview?: string;
+}
+
 export interface GraphNodeData {
   id: string;
   label: string;

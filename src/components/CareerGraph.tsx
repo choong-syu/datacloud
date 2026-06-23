@@ -84,9 +84,10 @@ export default function CareerGraph({
       highlight: !q || rootLabel.toLowerCase().includes(q) || selected?.id === `root:${rootLabel}`
     };
 
+    const builtJobs = buildJobs(data);
     const jobs = rootExpanded
       ? layoutJobsAsTree(
-          buildJobs(data)
+          builtJobs
             .filter((job) => !filters.beginnerOnly || job.beginner)
             .map((job) => ({
               ...job,
@@ -95,6 +96,25 @@ export default function CareerGraph({
             }))
         )
       : [];
+
+    if (rootExpanded && !jobs.length) {
+      jobs.push({
+        id: `job:${rootLabel} 분석 결과 없음`,
+        label: "분석 결과 없음",
+        kind: "job",
+        frequency: 1,
+        source: {
+          name: "분석 결과 없음",
+          postings: [],
+          required: [],
+          preferred: [],
+          mentioned: [],
+          related: []
+        },
+        x: 340,
+        y: 0
+      });
+    }
 
     let childNodes: Array<GraphNodeData & { x: number; y: number }> = [];
     const childEdges: Edge[] = [];
@@ -171,7 +191,7 @@ export default function CareerGraph({
       const positions = new Map(current.map((node) => [node.id, node.position]));
       return graph.nodes.map((node) => ({
         ...node,
-        position: positions.get(node.id) ?? node.position
+        position: node.data.kind === "root" || node.data.kind === "job" ? positions.get(node.id) ?? node.position : node.position
       }));
     });
     setEdges(graph.edges);
@@ -193,9 +213,9 @@ export default function CareerGraph({
 
   return (
     <div className="relative min-h-0 overflow-hidden bg-[radial-gradient(circle_at_18%_50%,rgba(34,211,238,.16),transparent_32%),#020617]">
-      <div className="pointer-events-none absolute left-4 top-4 z-10 rounded-lg border border-white/10 bg-slate-950/70 px-4 py-3 text-sm text-slate-200 backdrop-blur">
-        <b className="text-cyan-100">Interactive Tree Graph</b>
-        <div>Click the selected root to expand jobs. Click a job to branch related nodes. Drag nodes to reposition.</div>
+      <div className="pointer-events-none absolute left-4 top-4 z-10 max-w-[220px] rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 backdrop-blur">
+        <b className="text-cyan-100">직무 탐색 트리</b>
+        <div className="mt-1">노드를 클릭하면 관련 정보가 펼쳐집니다.</div>
       </div>
       <ReactFlow
         key={`${rootLabel}-${rootExpanded}-${expandedJob ?? "none"}`}

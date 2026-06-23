@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Header from "./components/Header";
 import CareerGraph from "./components/CareerGraph";
 import DetailPanel from "./components/DetailPanel";
-import RoadmapTimeline from "./components/RoadmapTimeline";
 import LoadingScreen from "./components/LoadingScreen";
 import TrackSelector, { TrackKey } from "./components/TrackSelector";
+import { runKeywordAnalysis } from "./data/keywordAnalysis";
 import { loadMarketData } from "./data/transform";
-import { DetailSelection, FilterState, MarketData } from "./types";
+import { DetailSelection, FilterState, KeywordAnalysisJob, MarketData } from "./types";
 
 const dataPaths: Record<TrackKey, string> = {
   cloud: "/data/cloud_job_market_analysis_2026-05-26.json",
@@ -21,10 +21,11 @@ const rootLabels: Record<TrackKey, string> = {
 
 export default function App() {
   const [datasets, setDatasets] = useState<Record<TrackKey, MarketData> | null>(null);
-  const [activeTrack, setActiveTrack] = useState<TrackKey>("cloud");
+  const [activeKey, setActiveKey] = useState<string>("cloud");
+  const [customDatasets, setCustomDatasets] = useState<Record<string, MarketData>>({});
+  const [analysisJobs, setAnalysisJobs] = useState<Record<string, KeywordAnalysisJob>>({});
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<DetailSelection | undefined>();
-  const [focusRoadmap, setFocusRoadmap] = useState<string | null>(null);
   const [filters] = useState<FilterState>({
     requiredOnly: false,
     includePreferred: true,
@@ -40,18 +41,58 @@ export default function App() {
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load data."));
   }, []);
 
-  const activeData = datasets?.[activeTrack];
-
-  const roadmaps = useMemo(() => {
-    if (!activeData) return [];
-    if (!focusRoadmap) return activeData.learning_roadmaps;
-    return activeData.learning_roadmaps.filter((roadmap) => JSON.stringify(roadmap).toLowerCase().includes(focusRoadmap.toLowerCase()));
-  }, [activeData, focusRoadmap]);
+  const activePreset = activeKey === "cloud" || activeKey === "data" ? activeKey : undefined;
+  const activeData = activePreset ? datasets?.[activePreset] : customDatasets[activeKey];
+  const activeLabel = activePreset ? rootLabels[activePreset] : analysisJobs[activeKey]?.keyword ?? "CUSTOM";
 
   const handleTrackChange = (track: TrackKey) => {
-    setActiveTrack(track);
+    setActiveKey(track);
     setSelected(undefined);
-    setFocusRoadmap(null);
+  };
+
+  const handleCustomSelect = (key: string) => {
+    if (!customDatasets[key]) return;
+    setActiveKey(key);
+    setSelected(undefined);
+  };
+
+  const handleCustomDelete = (key: string) => {
+    setAnalysisJobs((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setCustomDatasets((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    if (activeKey === key) {
+      setActiveKey("cloud");
+      setSelected(undefined);
+    }
+  };
+
+  const handleKeywordAnalyze = (keyword: string) => {
+    const key = `custom:${keyword.trim().toLowerCase()}`;
+    if (!keyword.trim() || analysisJobs[key]?.status === "running") return;
+
+    runKeywordAnalysis(keyword.trim(), (job) => {
+      setAnalysisJobs((current) => ({ ...current, [key]: job }));
+    }).then((data) => {
+      setCustomDatasets((current) => ({ ...current, [key]: data }));
+    }).catch((error) => {
+      setAnalysisJobs((current) => ({
+        ...current,
+        [key]: {
+          id: key,
+          keyword,
+          status: "failed",
+          stages: current[key]?.stages ?? [],
+          message: error instanceof Error ? error.message : "분석 작업 중 오류가 발생했습니다."
+        }
+      }));
+    });
   };
 
   if (error) {
@@ -75,11 +116,20 @@ export default function App() {
         animate={{ opacity: 1 }}
         className="grid min-h-0 flex-1 grid-cols-[260px_minmax(640px,1fr)_400px] xl:grid-cols-[280px_minmax(760px,1fr)_430px]"
       >
-        <TrackSelector active={activeTrack} datasets={datasets} onChange={handleTrackChange} />
-        <CareerGraph data={activeData} rootLabel={rootLabels[activeTrack]} query="" filters={filters} selected={selected} onSelect={setSelected} />
-        <DetailPanel data={activeData} selected={selected} onSelectRoadmap={setFocusRoadmap} />
+        <TrackSelector
+          active={activePreset}
+          activeCustomKey={activePreset ? undefined : activeKey}
+          analysisJobs={analysisJobs}
+          customDatasets={customDatasets}
+          datasets={datasets}
+          onAnalyze={handleKeywordAnalyze}
+          onChange={handleTrackChange}
+          onCustomDelete={handleCustomDelete}
+          onCustomSelect={handleCustomSelect}
+        />
+        <CareerGraph data={activeData} rootLabel={activeLabel} query="" filters={filters} selected={selected} onSelect={setSelected} />
+        <DetailPanel data={activeData} selected={selected} />
       </motion.div>
-      <RoadmapTimeline roadmaps={roadmaps} />
     </main>
   );
 }

@@ -1,6 +1,22 @@
 import { GraphNodeData, JobPosting, MarketData } from "../types";
 import { asArray, uniq } from "../utils/textUtils";
 
+const normalizeGraphNode = (node: any) => ({
+  type: node?.type ?? node?.kind ?? node?.node_type,
+  id: node?.id ?? node?.label ?? node?.name ?? node?.job_name ?? node?.skill_name,
+  frequency: typeof node?.frequency === "number" ? node.frequency : typeof node?.weight === "number" ? node.weight : undefined,
+  category: node?.category
+});
+
+const normalizeGraphEdge = (edge: any) => ({
+  type: edge?.type ?? edge?.relationship_type,
+  source: edge?.source ?? edge?.source_job ?? edge?.from,
+  target: edge?.target ?? edge?.target_job ?? edge?.to,
+  weight: edge?.weight ?? edge?.relationship_strength ?? edge?.frequency,
+  shared_skills: edge?.shared_skills,
+  skills: edge?.skills
+});
+
 const pickObjects = (text: string, keys: string[]) => {
   const re = new RegExp(`\\{[\\s\\S]*?${keys.map((k) => `"${k}"`).join("[\\s\\S]*?")}[\\s\\S]*?\\}`, "g");
   return Array.from(text.matchAll(re)).map((m) => m[0]);
@@ -99,8 +115,8 @@ export const normalizeData = (raw: Partial<MarketData>): MarketData => ({
   learning_roadmaps: asArray<MarketData["learning_roadmaps"][number]>(raw.learning_roadmaps),
   recommended_projects: asArray<MarketData["recommended_projects"][number]>(raw.recommended_projects),
   recommended_certificates: asArray<MarketData["recommended_certificates"][number]>(raw.recommended_certificates),
-  graph_nodes: asArray<MarketData["graph_nodes"][number]>(raw.graph_nodes),
-  graph_edges: asArray<MarketData["graph_edges"][number]>(raw.graph_edges),
+  graph_nodes: (asArray(raw.graph_nodes).length ? asArray(raw.graph_nodes) : asArray((raw as any).service_utilization?.graph_nodes)).map(normalizeGraphNode).filter((node) => node.id),
+  graph_edges: (asArray(raw.graph_edges).length ? asArray(raw.graph_edges) : asArray((raw as any).service_utilization?.graph_edges)).map(normalizeGraphEdge).filter((edge) => edge.source && edge.target),
   recovered: raw.recovered
 });
 
@@ -108,7 +124,8 @@ export const buildJobs = (data: MarketData): GraphNodeData[] => {
   const fromGraph = data.graph_nodes.filter((n) => n.type === "job" && n.id);
   const counts = new Map<string, number>();
   data.raw_job_postings.forEach((p) => p.job_name && counts.set(p.job_name, (counts.get(p.job_name) ?? 0) + 1));
-  const names = uniq([...fromGraph.map((n) => n.id!), ...Array.from(counts.keys())]);
+  data.discovered_jobs.forEach((job) => job.job_name && counts.set(job.job_name, Math.max(counts.get(job.job_name) ?? 0, job.frequency ?? 1)));
+  const names = uniq([...fromGraph.map((n) => n.id!), ...data.discovered_jobs.map((job) => job.job_name ?? ""), ...Array.from(counts.keys())]);
   return names.slice(0, 12).map((name) => ({
     id: `job:${name}`,
     label: name,
@@ -133,6 +150,12 @@ export const buildSkills = (data: MarketData, jobName?: string, limit = 8): Grap
     p.preferred_skills?.forEach((s) => add(s, "preferred"));
     p.mentioned_skills?.forEach((s) => add(s, "mentioned"));
   });
+  const discoveredJobs = jobName ? data.discovered_jobs.filter((job) => job.job_name === jobName) : data.discovered_jobs;
+  discoveredJobs.forEach((job) => {
+    job.required_skills?.forEach((s) => add(s, "required"));
+    job.preferred_skills?.forEach((s) => add(s, "preferred"));
+    job.mentioned_skills?.forEach((s) => add(s, "mentioned"));
+  });
   if (jobName) {
     data.graph_edges
       .filter((edge) => edge.type === "job_to_skill" && edge.source === jobName && edge.target)
@@ -142,6 +165,18 @@ export const buildSkills = (data: MarketData, jobName?: string, limit = 8): Grap
       const cur = counts.get(n.id!) ?? { total: 0, required: 0, preferred: 0, mentioned: 0 };
       cur.total = Math.max(cur.total, n.frequency ?? 0);
       counts.set(n.id!, cur);
+    });
+    data.skill_taxonomy.forEach((category: any) => {
+      asArray<any>(category.skills).forEach((skill) => {
+        const name = skill.skill_name ?? skill.skill ?? skill.name;
+        if (!name) return;
+        const cur = counts.get(name) ?? { total: 0, required: 0, preferred: 0, mentioned: 0 };
+        cur.total = Math.max(cur.total, skill.total_frequency ?? skill.frequency ?? 0);
+        cur.required = Math.max(cur.required, skill.required_frequency ?? 0);
+        cur.preferred = Math.max(cur.preferred, skill.preferred_frequency ?? 0);
+        cur.mentioned = Math.max(cur.mentioned, skill.mentioned_frequency ?? 0);
+        counts.set(name, cur);
+      });
     });
   }
   return Array.from(counts.entries()).sort((a, b) => b[1].total - a[1].total).slice(0, limit).map(([name, stat]) => ({
@@ -156,12 +191,13 @@ export const buildSkills = (data: MarketData, jobName?: string, limit = 8): Grap
 
 export const collectJobDetail = (data: MarketData, name: string) => {
   const postings = data.raw_job_postings.filter((p) => p.job_name === name || p.job_category?.includes(name));
+  const discovered = data.discovered_jobs.find((job) => job.job_name === name);
   return {
     name,
     postings,
-    required: uniq(postings.flatMap((p) => p.required_skills ?? [])).slice(0, 12),
-    preferred: uniq(postings.flatMap((p) => p.preferred_skills ?? [])).slice(0, 12),
-    mentioned: uniq(postings.flatMap((p) => p.mentioned_skills ?? [])).slice(0, 12),
+    required: uniq([...(discovered?.required_skills ?? []), ...postings.flatMap((p) => p.required_skills ?? [])]).slice(0, 12),
+    preferred: uniq([...(discovered?.preferred_skills ?? []), ...postings.flatMap((p) => p.preferred_skills ?? [])]).slice(0, 12),
+    mentioned: uniq([...(discovered?.mentioned_skills ?? []), ...postings.flatMap((p) => p.mentioned_skills ?? [])]).slice(0, 12),
     related: data.job_relation_graph.filter((e) => e.source === name || e.target === name)
   };
 };

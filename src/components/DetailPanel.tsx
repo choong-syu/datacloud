@@ -1,4 +1,4 @@
-import { BookOpen, ExternalLink, GraduationCap, Network, Sparkles } from "lucide-react";
+import { ExternalLink, GraduationCap, Network } from "lucide-react";
 import type { ReactNode } from "react";
 import { DetailSelection, MarketData } from "../types";
 import { collectJobDetail, collectSkillDetail, demoProjects } from "../data/transform";
@@ -8,9 +8,9 @@ import CertificateCard from "./CertificateCard";
 import EmptyState from "./EmptyState";
 import { compact, koreanSiteName, uniq } from "../utils/textUtils";
 
-export default function DetailPanel({ data, selected, onSelectRoadmap }: { data: MarketData; selected?: DetailSelection; onSelectRoadmap: (title: string) => void }) {
+export default function DetailPanel({ data, selected }: { data: MarketData; selected?: DetailSelection }) {
   if (!selected) return <aside className="min-h-0 overflow-y-auto border-l border-white/10 bg-slate-950/70"><EmptyState /></aside>;
-  const body = selected.kind === "job" ? <JobDetail data={data} label={selected.label} onSelectRoadmap={onSelectRoadmap} /> : selected.kind === "skill" ? <SkillDetail data={data} label={selected.label} /> : selected.kind === "project" ? <ProjectCard project={selected.source as any} /> : selected.kind === "certificate" ? <CertificateCard certificate={selected.source as any} /> : <EmptyState />;
+  const body = selected.kind === "job" ? <JobDetail data={data} label={selected.label} /> : selected.kind === "skill" ? <SkillDetail data={data} label={selected.label} /> : selected.kind === "project" ? <ProjectCard project={selected.source as any} /> : selected.kind === "certificate" ? <CertificateCard certificate={selected.source as any} /> : <EmptyState />;
   return (
     <aside className="min-h-0 overflow-y-auto border-l border-white/10 bg-slate-950/75 p-4">
       {body}
@@ -24,7 +24,7 @@ export default function DetailPanel({ data, selected, onSelectRoadmap }: { data:
   );
 }
 
-function JobDetail({ data, label, onSelectRoadmap }: { data: MarketData; label: string; onSelectRoadmap: (title: string) => void }) {
+function JobDetail({ data, label }: { data: MarketData; label: string }) {
   const detail = collectJobDetail(data, label);
   const postings = detail.postings.slice(0, 5);
   const projects = demoProjects.filter((p) => p.target_jobs?.includes(label)).slice(0, 2);
@@ -42,10 +42,6 @@ function JobDetail({ data, label, onSelectRoadmap }: { data: MarketData; label: 
       <SkillList title="필수 기술" skills={detail.required} kind="required" />
       <SkillList title="우대 기술" skills={detail.preferred} kind="preferred" />
       <SkillList title="단순 언급 기술" skills={detail.mentioned} kind="mentioned" />
-      <div className="grid grid-cols-2 gap-2">
-        <button onClick={() => onSelectRoadmap(label)} className="rounded-lg bg-cyan-300 px-3 py-3 text-sm font-black text-slate-950 hover:bg-cyan-200"><BookOpen className="mr-2 inline" size={16} />처음 배우기</button>
-        <button onClick={() => onSelectRoadmap("portfolio")} className="rounded-lg bg-emerald-300 px-3 py-3 text-sm font-black text-slate-950 hover:bg-emerald-200"><Sparkles className="mr-2 inline" size={16} />포트폴리오 추천</button>
-      </div>
       <Section title="추천 프로젝트" tag="공고 기반 추천">
         <div className="space-y-2">{(projects.length ? projects : demoProjects.slice(0, 2)).map((p) => <ProjectCard key={p.project_name} project={p} />)}</div>
       </Section>
